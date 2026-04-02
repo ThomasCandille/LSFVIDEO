@@ -15,6 +15,8 @@ NB_VARIATIONS = 10
 SEED = None
 VIDEO_EXTENSIONS = (".mp4", ".webm", ".avi", ".mov", ".mkv", ".m4v")
 MAX_WORKERS = max(1, (os.cpu_count() or 2) - 1)
+OUTPUT_RESIZE_FACTOR = 0.5
+OUTPUT_FPS_FACTOR = 1.0
 
 # Augmentation ranges tuned for realistic camera-domain shift.
 BRIGHTNESS_RANGE = (-0.12, 0.12)
@@ -126,9 +128,19 @@ def process_video(input_path, output_path, params, report_every_frames=0):
     if fps <= 0 or np.isnan(fps):
         fps = 25.0
 
+    output_fps = max(1.0, float(fps) * OUTPUT_FPS_FACTOR)
+    output_width = max(2, int(width * OUTPUT_RESIZE_FACTOR))
+    output_height = max(2, int(height * OUTPUT_RESIZE_FACTOR))
+
+    # Some encoders are more stable with even dimensions.
+    if output_width % 2 != 0:
+        output_width -= 1
+    if output_height % 2 != 0:
+        output_height -= 1
+
     # Initialize MP4 VideoWriter
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, float(fps), (width, height))
+    out = cv2.VideoWriter(output_path, fourcc, output_fps, (output_width, output_height))
 
     if not out.isOpened():
         raise Exception("Impossible de créer la vidéo MP4")
@@ -140,7 +152,10 @@ def process_video(input_path, output_path, params, report_every_frames=0):
         if not ret:
             break
 
-        augmented = augment_frame(frame, params, height, width)
+        if output_width != width or output_height != height:
+            frame = cv2.resize(frame, (output_width, output_height), interpolation=cv2.INTER_AREA)
+
+        augmented = augment_frame(frame, params, output_height, output_width)
         out.write(augmented)
 
         frame_count += 1
